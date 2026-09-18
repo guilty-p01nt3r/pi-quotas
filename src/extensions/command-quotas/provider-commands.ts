@@ -70,6 +70,12 @@ export function getProviderCommandInfo(
         commandName: "ollama:quotas",
         title: "Ollama Cloud Quotas",
       };
+    case "minimax-global":
+      return {
+        provider,
+        commandName: "minimax:quotas",
+        title: "MiniMax Global Quotas",
+      };
     case "cursor":
       return {
         provider,

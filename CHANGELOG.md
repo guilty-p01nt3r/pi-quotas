@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ### Added
+- **MiniMax Global provider**: rolling five-hour and weekly Coding Plan quotas from the Global API, using Pi auth or `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY`.
 - **Cursor provider**: billing-cycle plan, model-group, and on-demand usage using the Cursor SDK API key configured by `pi-cursor-sdk` in Pi auth or `CURSOR_API_KEY`. The key is exchanged through Cursor's SDK auth API before requesting dashboard usage.
 
 ## [0.5.0] - 2026-08-31

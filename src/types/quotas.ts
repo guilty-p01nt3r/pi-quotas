@@ -9,6 +9,7 @@ export type SupportedQuotaProvider =
   | "opencode-go"
   | "kimi-coding"
   | "ollama-cloud"
+  | "minimax-global"
   | "cursor";
 
 export type QuotasErrorKind =

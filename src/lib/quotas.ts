@@ -13,6 +13,7 @@ export const SUPPORTED_PROVIDERS: SupportedQuotaProvider[] = [
   "opencode-go",
   "kimi-coding",
   "ollama-cloud",
+  "minimax-global",
   "cursor",
 ];
 
@@ -27,6 +28,7 @@ export const PROVIDER_LABELS: Record<SupportedQuotaProvider, string> = {
   "opencode-go": "OpenCode Go",
   "kimi-coding": "Kimi Code",
   "ollama-cloud": "Ollama Cloud",
+  "minimax-global": "MiniMax Global",
   cursor: "Cursor",
 };
 
@@ -41,6 +43,7 @@ const PROVIDER_TTLS_MS: Record<SupportedQuotaProvider, number> = {
   "opencode-go": 60_000,
   "kimi-coding": 60_000,
   "ollama-cloud": 60_000,
+  "minimax-global": 60_000,
   cursor: 60_000,
 };
 

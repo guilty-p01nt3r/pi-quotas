@@ -68,6 +68,13 @@ describe("getProviderCommandInfo", () => {
     });
   });
 
+  it("maps MiniMax Global to minimax:quotas", () => {
+    expect(getProviderCommandInfo("minimax-global")).toMatchObject({
+      commandName: "minimax:quotas",
+      title: "MiniMax Global Quotas",
+    });
+  });
+
   it("maps Cursor to cursor:quotas", () => {
     expect(getProviderCommandInfo("cursor")).toMatchObject({
       commandName: "cursor:quotas",

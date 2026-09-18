@@ -10,6 +10,7 @@ import {
   parseCursorUsage,
   parseGitHubCopilotUsage,
   parseKimiCodingUsage,
+  parseMinimaxGlobalUsage,
   parseOllamaCloudUsage,
   parseOpenRouterUsage,
   parseSyntheticUsage,
@@ -564,6 +565,75 @@ export async function fetchXaiQuotas(
   );
 }
 
+export async function fetchMinimaxGlobalQuotasWithToken(
+  apiKey: string | undefined,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  if (!apiKey) {
+    return failure(
+      "No MiniMax Coding Plan key found (set MINIMAX_CODING_API_KEY)",
+      "config",
+    );
+  }
+
+  const endpoints = [
+    "https://api.minimax.io/v1/token_plan/remains",
+    "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
+  ];
+  let lastFailure: FetchJsonResult | undefined;
+  let applicationError: string | undefined;
+  for (const endpoint of endpoints) {
+    const result = await fetchJson(
+      endpoint,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+      },
+      signal,
+    );
+    if (!result.ok) {
+      lastFailure = result;
+      if (result.kind === "cancelled" || result.kind === "timeout") break;
+      continue;
+    }
+
+    const base = result.data?.data?.base_resp ?? result.data?.base_resp;
+    if (Number(base?.status_code ?? 0) !== 0) {
+      applicationError = base?.status_msg || "MiniMax rejected the quota request";
+      continue;
+    }
+    const windows = parseMinimaxGlobalUsage(result.data);
+    if (windows.length > 0) return success("minimax-global", windows);
+    applicationError = "MiniMax response contained no coding quota windows";
+  }
+
+  return failure(
+    applicationError ??
+      (lastFailure && !lastFailure.ok
+        ? lastFailure.message
+        : "MiniMax quota request failed"),
+    applicationError
+      ? "http"
+      : lastFailure && !lastFailure.ok
+        ? lastFailure.kind
+        : "network",
+  );
+}
+
+export async function fetchMinimaxGlobalQuotas(
+  authStorage: AuthStorage,
+  signal?: AbortSignal,
+): Promise<QuotasResult> {
+  const apiKey =
+    (await providerAccessToken(authStorage, "minimax-global")) ??
+    process.env.MINIMAX_CODING_API_KEY ??
+    (await providerAccessToken(authStorage, "minimax")) ??
+    process.env.MINIMAX_API_KEY;
+  return fetchMinimaxGlobalQuotasWithToken(apiKey, signal);
+}
+
 const CURSOR_SDK_REQUIRED_MESSAGE =
   "Cursor quotas require the pi-cursor-sdk extension. Install npm:pi-cursor-sdk, then use /login → Use an API key → Cursor or set CURSOR_API_KEY.";
 
@@ -649,5 +719,6 @@ export const PROVIDER_FETCHERS = {
   "opencode-go": fetchOpenCodeGoQuotas,
   "kimi-coding": fetchKimiCodingQuotas,
   "ollama-cloud": fetchOllamaCloudQuotas,
+  "minimax-global": fetchMinimaxGlobalQuotas,
   cursor: fetchCursorQuotas,
 } as const;

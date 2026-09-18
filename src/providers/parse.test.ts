@@ -4,12 +4,43 @@ import { parseCodexUsage } from "./providers.js";
 import { parseCursorUsage } from "./providers.js";
 import { parseGitHubCopilotUsage } from "./providers.js";
 import { parseKimiCodingUsage } from "./providers.js";
+import { parseMinimaxGlobalUsage } from "./providers.js";
 import { parseOllamaCloudUsage } from "./providers.js";
 import { parseOpenRouterUsage } from "./providers.js";
 import { parseSyntheticUsage } from "./providers.js";
 import { parseXaiUsage } from "./providers.js";
 import { parseZaiUsage } from "./providers.js";
 import { parseOpenCodeGoUsage } from "./providers.js";
+
+describe("parseMinimaxGlobalUsage", () => {
+  it("uses the most-consumed model and converts remaining to used", () => {
+    const windows = parseMinimaxGlobalUsage({
+      data: {
+        model_remains: [
+          {
+            model_name: "video",
+            current_interval_remaining_percent: 1,
+            current_weekly_remaining_percent: 1,
+          },
+          {
+            model_name: "MiniMax-M2",
+            current_interval_remaining_percent: 60,
+            current_weekly_remaining_percent: 80,
+          },
+          {
+            model_name: "MiniMax-M2.5",
+            current_interval_remaining_percent: 10,
+            current_weekly_remaining_percent: 50,
+          },
+        ],
+      },
+    });
+
+    expect(windows).toHaveLength(2);
+    expect(windows[0]).toMatchObject({ provider: "minimax-global", label: "5h", usedPercent: 90 });
+    expect(windows[1]).toMatchObject({ provider: "minimax-global", label: "Weekly", usedPercent: 50 });
+  });
+});
 
 describe("parseCursorUsage", () => {
   it("maps plan, model, and on-demand allowances", () => {
