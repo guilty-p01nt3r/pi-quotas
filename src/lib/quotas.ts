@@ -92,6 +92,28 @@ export function isSupportedProvider(
   return SUPPORTED_PROVIDERS.includes(provider as SupportedQuotaProvider);
 }
 
+/**
+ * pi provider IDs that map to a differently named quota provider.
+ *
+ * pi exposes MiniMax as `minimax` (global platform) and `minimax-cn` (China),
+ * while the quota provider is registered as `minimax-global`.
+ */
+const PI_PROVIDER_ALIASES: Record<string, SupportedQuotaProvider> = {
+  minimax: "minimax-global",
+};
+
+/**
+ * Resolve the active model's pi provider ID to a quota provider.
+ * Returns undefined when the provider has no quota support.
+ */
+export function resolveQuotaProvider(
+  provider: string | undefined,
+): SupportedQuotaProvider | undefined {
+  if (!provider) return undefined;
+  if (isSupportedProvider(provider)) return provider;
+  return PI_PROVIDER_ALIASES[provider];
+}
+
 export function clearQuotaCache(provider?: SupportedQuotaProvider): void {
   if (provider) cache.delete(provider);
   else cache.clear();
