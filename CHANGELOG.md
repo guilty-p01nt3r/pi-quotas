@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 - **MiniMax Global provider**: rolling five-hour and weekly Coding Plan quotas from the Global API, using Pi auth or `MINIMAX_CODING_API_KEY` / `MINIMAX_API_KEY`.
 - **Cursor provider**: billing-cycle plan, model-group, and on-demand usage using the Cursor SDK API key configured by `pi-cursor-sdk` in Pi auth or `CURSOR_API_KEY`. The key is exchanged through Cursor's SDK auth API before requesting dashboard usage.
 
+### Changed
+- **OpenCode Go uses the official usage API**: rolling 5h / weekly / monthly percents and reset times now come from `GET https://opencode.ai/zen/go/v1/usage` using the `opencode-go` API key stored by `pi /login` (or `OPENCODE_API_KEY`). No workspace ID, browser auth cookie, or dashboard HTML scraping is needed. The `OPENCODE_GO_WORKSPACE_ID` / `OPENCODE_GO_AUTH_COOKIE` configuration and `~/.config/opencode/opencode-quota/opencode-go.json` file are no longer read.
+
 ## [0.5.0] - 2026-08-31
 
 ### Added
