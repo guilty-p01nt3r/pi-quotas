@@ -336,6 +336,12 @@ describe("fetchOpenCodeGoQuotas", () => {
         ["Weekly", 34],
         ["Monthly", 56],
       ]);
+      // The weekly window is a full 7-day budget: expected usage is the
+      // elapsed share of the window, not a per-day slice of it.
+      expect(
+        result.data.windows.find((window) => window.label === "Weekly")
+          ?.paceScale,
+      ).toBeUndefined();
     }
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(

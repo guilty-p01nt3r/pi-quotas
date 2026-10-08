@@ -591,7 +591,6 @@ export function parseOpenCodeGoApiUsage(data: {
       usedValue: weekly.usedPercent,
       limitValue: 100,
       showPace: true,
-      paceScale: 1 / 7,
       nextLabel: "Resets",
     });
   }
