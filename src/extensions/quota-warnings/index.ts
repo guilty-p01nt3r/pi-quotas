@@ -67,7 +67,12 @@ export default async function (pi: ExtensionAPI) {
     if (!result.success) return;
 
     const risky = result.data.windows
-      .map((window) => ({ window, assessment: assessWindow(window) }))
+      .map((window) => ({
+        window,
+        assessment: assessWindow(window, {
+          paceTolerancePercent: configLoader.getConfig().paceTolerancePercent,
+        }),
+      }))
       .filter((entry) => entry.assessment.severity !== "none");
     if (risky.length === 0) return;
 

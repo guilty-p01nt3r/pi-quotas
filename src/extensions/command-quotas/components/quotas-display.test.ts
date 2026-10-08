@@ -17,6 +17,7 @@ function fakeTheme() {
     bold: (text: string) => text,
     fg: (color: keyof typeof ansi, text: string) => `${ansi[color] ?? ""}${text}\x1b[0m`,
     getFgAnsi: (color: keyof typeof ansi) => ansi[color] ?? "",
+    getColorMode: () => "truecolor" as const,
   };
 }
 
@@ -85,6 +86,52 @@ describe("QuotasComponent", () => {
 
     expect(output).toContain("51/300 left");
     expect(output).not.toContain(`${ansi.accent}|`);
+
+    vi.useRealTimers();
+  });
+
+  it("colors paced windows green, yellow, or orange by pace band", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-13T12:00:00Z"));
+
+    const render = (usedPercent: number) => {
+      const component = makeComponent();
+      component.setState({
+        type: "loaded",
+        snapshots: [
+          {
+            provider: "opencode-go",
+            result: {
+              success: true,
+              data: {
+                provider: "opencode-go",
+                windows: [
+                  {
+                    provider: "opencode-go",
+                    label: "Weekly",
+                    usedPercent,
+                    // 3 of 7 days elapsed -> pace = 42.857%
+                    resetsAt: new Date("2026-05-17T12:00:00Z"),
+                    windowSeconds: 7 * 24 * 3600,
+                    usedValue: usedPercent,
+                    limitValue: 100,
+                    showPace: true,
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+      return component.render(70).join("\n");
+    };
+
+    // Green at or under the estimate.
+    expect(render(40)).toContain(`${ansi.success}60% left`);
+    // Yellow up to 10 points over the estimate.
+    expect(render(48)).toContain(`${ansi.warning}52% left`);
+    // Orange beyond the tolerance.
+    expect(render(60)).toContain("\x1b[38;2;255;140;0m40% left");
 
     vi.useRealTimers();
   });

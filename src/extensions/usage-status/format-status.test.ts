@@ -7,6 +7,7 @@ import { formatStatus, formatStatusForFooter, toStatusWindows, toWindowStatus } 
 function fakeTheme() {
   return {
     fg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
+    getColorMode: () => "truecolor" as const,
   };
 }
 
@@ -78,7 +79,7 @@ describe("formatWindowStatus", () => {
     expect(result).toContain("[error]");
   });
 
-  it("colors label when severity is warning or worse", () => {
+  it("colors label orange for high severity", () => {
     const w: WindowStatus = {
       label: "7d",
       usedPercent: 85,
@@ -89,9 +90,9 @@ describe("formatWindowStatus", () => {
       limitValue: 100,
     };
     const result = formatWindowStatus(theme, w);
-    // label should be colored with error (high maps to error)
-    expect(result).toContain("[error]7d:");
-    expect(result).toContain("15% left");
+    // high maps to orange, which is emitted directly (no theme token)
+    expect(result).toContain("\x1b[38;2;255;140;0m7d:");
+    expect(result).toContain("\x1b[38;2;255;140;0m15% left");
   });
 
   it("keeps label dim when severity is none", () => {
@@ -106,6 +107,28 @@ describe("formatWindowStatus", () => {
     };
     const result = formatWindowStatus(theme, w);
     expect(result).toContain("[dim]5h:");
+  });
+
+  it("applies the configured pace tolerance when deriving severity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-13T12:00:00Z"));
+
+    const window = {
+      provider: "opencode-go" as const,
+      label: "Weekly",
+      usedPercent: 47.86,
+      resetsAt: new Date("2026-05-17T12:00:00Z"),
+      windowSeconds: 7 * 24 * 60 * 60,
+      usedValue: 47.86,
+      limitValue: 100,
+      showPace: true,
+    };
+
+    // pace = 42.857%: +5 points is yellow by default, orange with no tolerance.
+    expect(toWindowStatus(window).severity).toBe("warning");
+    expect(
+      toWindowStatus(window, { paceTolerancePercent: 0 }).severity,
+    ).toBe("high");
   });
 
   it("renders footer reset times with minute precision for every provider", () => {

@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - **Cursor provider**: billing-cycle plan, model-group, and on-demand usage using the Cursor SDK API key configured by `pi-cursor-sdk` in Pi auth or `CURSOR_API_KEY`. The key is exchanged through Cursor's SDK auth API before requesting dashboard usage.
 
 ### Changed
+- **Pace-relative quota colors**: footer and dashboard colors now follow the time-based estimate instead of fixed usage thresholds. Usage is green at or under the window's linear pace (e.g. ~42.9% used by Wednesday of a weekly window), yellow up to 10 points above it, orange beyond that, and red once the window is exhausted. Absolute 80%/90%/100% usage still acts as a floor, and the pace estimate is clamped at 5% so early-window noise cannot flag healthy usage. The yellow band is configurable via **Pace tolerance** in `/quotas:settings`.
+- **OpenCode Go weekly pace**: the weekly window is a full 7-day budget, so its pace estimate now uses the elapsed share of the week. The previous per-day normalization turned the footer red far too early. Synthetic's weekly credits keep their per-day normalization.
 - **OpenCode Go uses the official usage API**: rolling 5h / weekly / monthly percents and reset times now come from `GET https://opencode.ai/zen/go/v1/usage` using the `opencode-go` API key stored by `pi /login` (or `OPENCODE_API_KEY`). No workspace ID, browser auth cookie, or dashboard HTML scraping is needed. The `OPENCODE_GO_WORKSPACE_ID` / `OPENCODE_GO_AUTH_COOKIE` configuration and `~/.config/opencode/opencode-quota/opencode-go.json` file are no longer read.
 
 ### Fixed

@@ -3,9 +3,12 @@ import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import type { Component } from "@mariozechner/pi-tui";
 import { Loader, matchesKey, truncateToWidth } from "@mariozechner/pi-tui";
 import pkg from "../../../../package.json" with { type: "json" };
+import { configLoader } from "../../../config.js";
 import { PROVIDER_LABELS } from "../../../lib/quotas.js";
 import type { QuotasResult, SupportedQuotaProvider } from "../../../types/quotas.js";
+import type { SeverityColor } from "../../../utils/quotas-severity.js";
 import {
+  applySeverityColor,
   assessWindow,
   formatTimeRemaining,
   getSeverityColor,
@@ -24,7 +27,7 @@ function renderProgressBar(
   percent: number,
   width: number,
   theme: Theme,
-  fillColor: "success" | "warning" | "error",
+  fillColor: SeverityColor,
   pacePercent?: number | null,
 ): string {
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
@@ -42,12 +45,12 @@ function renderProgressBar(
   for (let idx = 0; idx < width; idx++) {
     if (paceIndex !== null && idx === paceIndex) {
       if (idx < filled) {
-        parts.push(theme.fg(fillColor, "█"));
+        parts.push(applySeverityColor(theme, fillColor, "█"));
       } else {
-        parts.push(theme.fg(fillColor, "|"));
+        parts.push(applySeverityColor(theme, fillColor, "|"));
       }
     } else if (idx < filled) {
-      parts.push(theme.fg(fillColor, "█"));
+      parts.push(applySeverityColor(theme, fillColor, "█"));
     } else {
       parts.push(theme.fg("dim", "░"));
     }
@@ -169,7 +172,9 @@ export class QuotasComponent implements Component {
 
     const barWidth = Math.min(42, Math.max(18, maxWidth - 28));
     for (const window of windows) {
-      const assessment = assessWindow(window);
+      const assessment = assessWindow(window, {
+        paceTolerancePercent: configLoader.getConfig().paceTolerancePercent,
+      });
       const color = getSeverityColor(assessment.severity);
 
       // Format the usage string depending on window type
@@ -196,9 +201,11 @@ export class QuotasComponent implements Component {
       const limitedBadge = window.limited ? this.theme.fg("error", " LIMITED") : "";
       // Color the label based on severity: dim when safe, colored when at risk
       const isAtRisk = assessment.severity !== "none";
-      const labelColor = isAtRisk ? color : "dim";
-      lines.push(truncateToWidth(`    ${this.theme.fg(labelColor, `${window.label}:`)}`, maxWidth));
-      lines.push(truncateToWidth(`    ${bar} ${this.theme.fg(color, usedStr)}${limitedBadge}`, maxWidth));
+      const labelText = isAtRisk
+        ? applySeverityColor(this.theme, color, `${window.label}:`)
+        : this.theme.fg("dim", `${window.label}:`);
+      lines.push(truncateToWidth(`    ${labelText}`, maxWidth));
+      lines.push(truncateToWidth(`    ${bar} ${applySeverityColor(this.theme, color, usedStr)}${limitedBadge}`, maxWidth));
 
       // Subtitle: next event info + overage
       const subtitleParts: string[] = [];

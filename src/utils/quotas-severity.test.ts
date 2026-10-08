@@ -1,13 +1,19 @@
-import { assert, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  applySeverityColor,
   assessWindow,
+  DEFAULT_PACE_TOLERANCE_PERCENT,
   formatTimeRemaining,
   getPacePercent,
+  getPaceSeverity,
   getProjectedPercent,
   getSeverityColor,
-  type QuotaWindow,
   safePercent,
+  type QuotaWindow,
 } from "./quotas-severity.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FROZEN_NOW = new Date("2026-05-13T12:00:00.000Z");
 
 function makeWindow(
   overrides: Partial<QuotaWindow> & Pick<QuotaWindow, "usedPercent">,
@@ -54,8 +60,8 @@ describe("getPacePercent", () => {
       resetsAt: new Date(Date.now() + 1800 * 1000),
     });
     const pace = getPacePercent(w);
-    assert(pace, "pace should not be null");
-    expect(pace).toBeCloseTo(50, 0);
+    expect(pace).not.toBeNull();
+    expect(pace!).toBeCloseTo(50, 0);
   });
 });
 
@@ -67,58 +73,192 @@ describe("getProjectedPercent", () => {
   it("projects based on pace", () => {
     expect(getProjectedPercent(50, 25)).toBe(200);
   });
+
+  it("clamps tiny pace to the minimum", () => {
+    expect(getProjectedPercent(5, 1)).toBe(100);
+  });
+});
+
+describe("getPaceSeverity", () => {
+  it("bands usage around the pace estimate", () => {
+    expect(getPaceSeverity(40, 42.857, 10)).toBe("none");
+    expect(getPaceSeverity(42.857, 42.857, 10)).toBe("none");
+    expect(getPaceSeverity(42.858, 42.857, 10)).toBe("warning");
+    expect(getPaceSeverity(52.857, 42.857, 10)).toBe("warning");
+    expect(getPaceSeverity(52.858, 42.857, 10)).toBe("high");
+  });
+
+  it("uses the default tolerance when omitted", () => {
+    expect(getPaceSeverity(20, 10)).toBe("warning");
+    expect(getPaceSeverity(20.001, 10)).toBe("high");
+  });
+
+  it("clamps out-of-range tolerances", () => {
+    expect(getPaceSeverity(11, 10, -5)).toBe("high");
+    expect(getPaceSeverity(55, 10, 999)).toBe("warning");
+    expect(getPaceSeverity(65, 10, 999)).toBe("high");
+  });
 });
 
 describe("assessWindow", () => {
-  it("returns critical for limited window regardless of usage", () => {
-    const w = makeWindow({ usedPercent: 5, showPace: false, limited: true });
-    expect(assessWindow(w).severity).toBe("critical");
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FROZEN_NOW);
   });
 
-  it("warns for pace-aware windows once absolute usage reaches 80%", () => {
-    const now = Date.now();
-    const monthSeconds = 31 * 24 * 3600;
-    const w = makeWindow({
-      provider: "github-copilot",
-      label: "Premium / month",
-      usedPercent: 83,
-      usedValue: 249,
-      limitValue: 300,
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function weeklyWindow(
+    usedPercent: number,
+    overrides: Partial<QuotaWindow> = {},
+  ): QuotaWindow {
+    return makeWindow({
+      provider: "opencode-go",
+      label: "Weekly",
+      usedPercent,
+      usedValue: usedPercent,
       showPace: true,
-      windowSeconds: monthSeconds,
-      // Screenshot repro: 51/300 left with reset in about 428h35m in a 31-day
-      // monthly window. Dynamic pace alone projects just under warning, but
-      // only 17% remains, so low-quota color should still be amber.
-      resetsAt: new Date(now + ((428 * 60 + 35) * 60 * 1000)),
+      windowSeconds: 7 * 24 * 3600,
+      // 3 of 7 days elapsed -> pace = 42.857...
+      resetsAt: new Date(FROZEN_NOW.getTime() + 4 * DAY_MS),
+      ...overrides,
     });
+  }
 
-    expect(assessWindow(w).severity).toBe("warning");
+  it("keeps usage green at or under the pace estimate", () => {
+    const pace = getPacePercent(weeklyWindow(0));
+    expect(pace).not.toBeNull();
+    expect(assessWindow(weeklyWindow(pace!)).severity).toBe("none");
+    expect(assessWindow(weeklyWindow(pace! - 5)).severity).toBe("none");
   });
 
-  it("returns warning when projected exceeds dynamic warn threshold", () => {
-    const w = makeWindow({
-      usedPercent: 79,
-      showPace: true,
-      paceScale: 1,
-      windowSeconds: 3600,
-      resetsAt: new Date(Date.now() + 2520 * 1000),
-    });
-    expect(assessWindow(w).severity).toBe("warning");
+  it("turns yellow within the tolerance and orange beyond it", () => {
+    const pace = getPacePercent(weeklyWindow(0))!;
+    expect(assessWindow(weeklyWindow(pace + 0.001)).severity).toBe("warning");
+    expect(assessWindow(weeklyWindow(pace + 5)).severity).toBe("warning");
+    expect(assessWindow(weeklyWindow(pace + 10)).severity).toBe("warning");
+    expect(assessWindow(weeklyWindow(pace + 10.001)).severity).toBe("high");
   });
 
-  it("uses paceScale to normalize pace", () => {
-    const w = makeWindow({
-      usedPercent: 95,
+  it("exposes the pace estimate and tolerance on the assessment", () => {
+    const assessment = assessWindow(weeklyWindow(50));
+    expect(assessment.paceThresholdPercent).toBeCloseTo(42.857, 2);
+    expect(assessment.tolerancePercent).toBe(DEFAULT_PACE_TOLERANCE_PERCENT);
+    expect(assessment.projectedPercent).toBeCloseTo((50 / 42.857) * 100, 0);
+
+    const custom = assessWindow(weeklyWindow(50), {
+      paceTolerancePercent: 25,
+    });
+    expect(custom.tolerancePercent).toBe(25);
+  });
+
+  it("honors a custom tolerance", () => {
+    const pace = getPacePercent(weeklyWindow(0))!;
+    const over = weeklyWindow(pace + 20);
+    expect(assessWindow(over).severity).toBe("high");
+    expect(assessWindow(over, { paceTolerancePercent: 20 }).severity).toBe(
+      "warning",
+    );
+    expect(assessWindow(over, { paceTolerancePercent: 0 }).severity).toBe(
+      "high",
+    );
+
+    const barely = weeklyWindow(pace + 1);
+    expect(assessWindow(barely, { paceTolerancePercent: 0 }).severity).toBe(
+      "high",
+    );
+    expect(assessWindow(barely).severity).toBe("warning");
+  });
+
+  it("clamps the pace estimate to the minimum at window start", () => {
+    const fresh = weeklyWindow(0, {
+      resetsAt: new Date(FROZEN_NOW.getTime() + 7 * DAY_MS),
+    });
+    expect(getPacePercent(fresh)).toBe(0);
+    expect(assessWindow(fresh).paceThresholdPercent).toBe(5);
+
+    expect(assessWindow({ ...fresh, usedPercent: 4 }).severity).toBe("none");
+    expect(assessWindow({ ...fresh, usedPercent: 5 }).severity).toBe("none");
+    expect(assessWindow({ ...fresh, usedPercent: 5.5 }).severity).toBe(
+      "warning",
+    );
+    expect(assessWindow({ ...fresh, usedPercent: 15 }).severity).toBe(
+      "warning",
+    );
+    expect(assessWindow({ ...fresh, usedPercent: 15.5 }).severity).toBe("high");
+  });
+
+  it("normalizes pace with paceScale (Synthetic weekly credits)", () => {
+    const syntheticWindow = makeWindow({
+      provider: "synthetic",
+      label: "Credits / week",
+      usedPercent: 8,
+      windowSeconds: 24 * 3600,
+      resetsAt: new Date(FROZEN_NOW.getTime() + 12 * 3600 * 1000),
       showPace: true,
       paceScale: 1 / 7,
-      windowSeconds: 7 * 24 * 3600,
-      resetsAt: new Date(Date.now() + 6 * 24 * 3600 * 1000),
     });
-    const result = assessWindow(w);
-    assert(result.pacePercent, "pacePercent should not be null");
-    expect(result.pacePercent).toBeLessThan(15);
-    expect(result.projectedPercent).toBeGreaterThan(500);
-    expect(result.severity).toBe("critical");
+
+    // Raw pace is 50%, normalized to 50 / 7 = 7.142857.
+    expect(assessWindow(syntheticWindow).paceThresholdPercent).toBeCloseTo(
+      50 / 7,
+      5,
+    );
+    expect(assessWindow({ ...syntheticWindow, usedPercent: 7 }).severity).toBe(
+      "none",
+    );
+    expect(assessWindow({ ...syntheticWindow, usedPercent: 8 }).severity).toBe(
+      "warning",
+    );
+    expect(assessWindow({ ...syntheticWindow, usedPercent: 17 }).severity).toBe(
+      "warning",
+    );
+    expect(assessWindow({ ...syntheticWindow, usedPercent: 18 }).severity).toBe(
+      "high",
+    );
+  });
+
+  it("keeps absolute usage floors even when pace says green", () => {
+    const lateWindow = weeklyWindow(85, {
+      resetsAt: new Date(FROZEN_NOW.getTime() + 0.5 * DAY_MS),
+    });
+    expect(assessWindow(lateWindow).severity).toBe("warning");
+    expect(assessWindow({ ...lateWindow, usedPercent: 92 }).severity).toBe(
+      "high",
+    );
+    expect(assessWindow({ ...lateWindow, usedPercent: 100 }).severity).toBe(
+      "critical",
+    );
+  });
+
+  it("keeps limited windows critical regardless of pace", () => {
+    const limited = assessWindow(
+      makeWindow({ usedPercent: 5, showPace: false, limited: true }),
+    );
+    expect(limited.severity).toBe("critical");
+  });
+
+  it("falls back to absolute severity for windows without pace", () => {
+    const base: Partial<QuotaWindow> = {
+      showPace: false,
+      windowSeconds: 0,
+      resetsAt: new Date(0),
+    };
+
+    const none = assessWindow(makeWindow({ usedPercent: 50, ...base }));
+    expect(none.severity).toBe("none");
+    expect(none.paceThresholdPercent).toBeNull();
+    expect(assessWindow(makeWindow({ usedPercent: 82, ...base })).severity).toBe(
+      "warning",
+    );
+    expect(assessWindow(makeWindow({ usedPercent: 92, ...base })).severity).toBe(
+      "high",
+    );
+    expect(
+      assessWindow(makeWindow({ usedPercent: 100, ...base })).severity,
+    ).toBe("critical");
   });
 });
 
@@ -130,10 +270,59 @@ describe("formatTimeRemaining", () => {
 });
 
 describe("getSeverityColor", () => {
-  it("maps severity levels to display colors", () => {
+  it("maps severity levels to the green/yellow/orange/red palette", () => {
     expect(getSeverityColor("none")).toBe("success");
     expect(getSeverityColor("warning")).toBe("warning");
-    expect(getSeverityColor("high")).toBe("error");
+    expect(getSeverityColor("high")).toBe("orange");
     expect(getSeverityColor("critical")).toBe("error");
+  });
+});
+
+describe("applySeverityColor", () => {
+  function fakeTheme() {
+    return {
+      fg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
+      getColorMode: () => "truecolor" as const,
+    };
+  }
+
+  afterEach(() => {
+    delete process.env.NO_COLOR;
+  });
+
+  it("maps non-orange palette entries to theme colors", () => {
+    const theme = fakeTheme();
+    expect(applySeverityColor(theme, "success", "x")).toBe(
+      "[success]x[/success]",
+    );
+    expect(applySeverityColor(theme, "warning", "x")).toBe(
+      "[warning]x[/warning]",
+    );
+    expect(applySeverityColor(theme, "error", "x")).toBe("[error]x[/error]");
+  });
+
+  it("emits orange directly for truecolor and 256-color terminals", () => {
+    expect(applySeverityColor(fakeTheme(), "orange", "x")).toBe(
+      "\x1b[38;2;255;140;0mx\x1b[39m",
+    );
+
+    const theme256 = { ...fakeTheme(), getColorMode: () => "256color" as const };
+    expect(applySeverityColor(theme256, "orange", "x")).toBe(
+      "\x1b[38;5;208mx\x1b[39m",
+    );
+  });
+
+  it("falls back to truecolor when the theme does not report a mode", () => {
+    const plainTheme = {
+      fg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
+    };
+    expect(applySeverityColor(plainTheme, "orange", "x")).toBe(
+      "\x1b[38;2;255;140;0mx\x1b[39m",
+    );
+  });
+
+  it("respects NO_COLOR", () => {
+    process.env.NO_COLOR = "1";
+    expect(applySeverityColor(fakeTheme(), "orange", "x")).toBe("x");
   });
 });

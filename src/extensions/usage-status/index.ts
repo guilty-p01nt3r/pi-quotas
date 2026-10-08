@@ -23,6 +23,7 @@ import {
 import {
   assessWindow,
   formatTimeRemaining,
+  type AssessWindowOptions,
 } from "../../utils/quotas-severity.js";
 import type { QuotaWindow, SupportedQuotaProvider } from "../../types/quotas.js";
 import { formatWindowStatus, type WindowStatus } from "./format-status.js";
@@ -76,11 +77,14 @@ function shouldShowInStatus(window: QuotaWindow): boolean {
   );
 }
 
-export function toWindowStatus(window: QuotaWindow): WindowStatus {
+export function toWindowStatus(
+  window: QuotaWindow,
+  options?: AssessWindowOptions,
+): WindowStatus {
   return {
     label: window.label,
     usedPercent: window.usedPercent,
-    severity: assessWindow(window).severity,
+    severity: assessWindow(window, options).severity,
     resetsAt: window.resetsAt.getTime() > 0 ? window.resetsAt.toISOString() : null,
     limited: window.limited ?? false,
     isCurrency: window.isCurrency,
@@ -89,8 +93,11 @@ export function toWindowStatus(window: QuotaWindow): WindowStatus {
   };
 }
 
-export function toStatusWindows(windows: QuotaWindow[]): WindowStatus[] {
-  return windows.filter(shouldShowInStatus).map(toWindowStatus);
+export function toStatusWindows(
+  windows: QuotaWindow[],
+  options?: AssessWindowOptions,
+): WindowStatus[] {
+  return windows.filter(shouldShowInStatus).map((window) => toWindowStatus(window, options));
 }
 
 export function formatStatusForFooter(
@@ -163,7 +170,9 @@ function createStatusRefresher() {
         setStatusSafely(ctx, (ctx) => ctx.ui.theme.fg("warning", "usage unavailable"));
         return;
       }
-      const windows: WindowStatus[] = toStatusWindows(result.data.windows);
+      const windows: WindowStatus[] = toStatusWindows(result.data.windows, {
+        paceTolerancePercent: configLoader.getConfig().paceTolerancePercent,
+      });
       const status = formatStatusForFooter(ctx, windows);
       lastStatus = status === undefined ? undefined : windows;
       setStatusSafely(ctx, status);

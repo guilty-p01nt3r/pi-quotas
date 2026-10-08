@@ -4,6 +4,11 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import pkg from "../package.json" with { type: "json" };
+import {
+  clampPaceTolerance,
+  DEFAULT_PACE_TOLERANCE_PERCENT,
+  MAX_PACE_TOLERANCE_PERCENT,
+} from "./utils/quotas-severity.js";
 
 export type QuotasFeatureId =
   | "quotasCommand"
@@ -32,6 +37,8 @@ export interface QuotasConfig {
   quotaWarnings?: boolean;
   /** When true and pi-synthetic's usage footer is active, hide pi-quotas' Synthetic footer. */
   deferToSynthetic?: boolean;
+  /** Percentage points above the time-based pace estimate before usage turns yellow. Defaults to 10. */
+  paceTolerancePercent?: number;
 }
 
 export interface ResolvedQuotasConfig {
@@ -42,6 +49,7 @@ export interface ResolvedQuotasConfig {
   tokenStatus: boolean;
   quotaWarnings: boolean;
   deferToSynthetic: boolean;
+  paceTolerancePercent: number;
 }
 
 const DEFAULT_CONFIG: ResolvedQuotasConfig = {
@@ -52,6 +60,7 @@ const DEFAULT_CONFIG: ResolvedQuotasConfig = {
   tokenStatus: true,
   quotaWarnings: true,
   deferToSynthetic: true,
+  paceTolerancePercent: DEFAULT_PACE_TOLERANCE_PERCENT,
 };
 
 let pendingMigrationNotice = false;
@@ -91,6 +100,7 @@ class QuotasConfigStore {
       quotaWarnings: input?.quotaWarnings ?? DEFAULT_CONFIG.quotaWarnings,
       deferToSynthetic:
         input?.deferToSynthetic ?? DEFAULT_CONFIG.deferToSynthetic,
+      paceTolerancePercent: clampPaceTolerance(input?.paceTolerancePercent),
     };
   }
 
@@ -156,6 +166,8 @@ export function emitQuotasConfigUpdated(pi: ExtensionAPI): void {
   });
 }
 
+const PACE_TOLERANCE_LABEL = "Pace tolerance";
+
 const FEATURE_META: Array<{
   id: QuotasFeatureId;
   label: string;
@@ -220,7 +232,8 @@ export function registerQuotasSettings(
           const enabled = draft[feature.id] ? "enabled" : "disabled";
           return `${feature.label}: ${enabled}${loaded}`;
         });
-        choices.push("Save and exit", "Cancel");
+        const toleranceRow = `${PACE_TOLERANCE_LABEL}: ${draft.paceTolerancePercent} points (yellow band)`;
+        choices.push(toleranceRow, "Save and exit", "Cancel");
 
         const selected = await ctx.ui.select("Quotas Settings", choices);
         if (!selected || selected === "Cancel") return;
@@ -232,6 +245,29 @@ export function registerQuotasSettings(
             "info",
           );
           return;
+        }
+
+        if (selected.startsWith(`${PACE_TOLERANCE_LABEL}:`)) {
+          const entered = await ctx.ui.input(
+            `${PACE_TOLERANCE_LABEL} (percentage points above the time-based pace estimate)`,
+            String(draft.paceTolerancePercent),
+          );
+          if (entered !== undefined) {
+            const parsed = Number(entered.trim());
+            if (
+              !Number.isFinite(parsed) ||
+              parsed < 0 ||
+              parsed > MAX_PACE_TOLERANCE_PERCENT
+            ) {
+              ctx.ui.notify(
+                `Enter a number between 0 and ${MAX_PACE_TOLERANCE_PERCENT}.`,
+                "warning",
+              );
+            } else {
+              draft.paceTolerancePercent = Math.round(parsed);
+            }
+          }
+          continue;
         }
 
         const feature = FEATURE_META.find((item) =>

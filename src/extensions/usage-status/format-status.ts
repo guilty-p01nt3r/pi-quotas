@@ -1,5 +1,12 @@
-import type { RiskSeverity } from "../../utils/quotas-severity.js";
-import { getSeverityColor } from "../../utils/quotas-severity.js";
+import type {
+  RiskSeverity,
+  SeverityColor,
+  SeverityThemeLike,
+} from "../../utils/quotas-severity.js";
+import {
+  applySeverityColor,
+  getSeverityColor,
+} from "../../utils/quotas-severity.js";
 
 export type WindowStatus = {
   label: string;
@@ -12,9 +19,7 @@ export type WindowStatus = {
   limitValue?: number;
 };
 
-export interface ThemeLike {
-  fg(color: string, text: string): string;
-}
+export type ThemeLike = SeverityThemeLike;
 
 const SHORT_LABELS: Record<string, string> = {
   "5h": "5h",
@@ -66,12 +71,13 @@ function hasRealCounts(w: WindowStatus): boolean {
  */
 export function formatWindowStatus(theme: ThemeLike, w: WindowStatus): string {
   const short = SHORT_LABELS[w.label] ?? w.label;
-  const color = getSeverityColor(w.severity);
+  const color: SeverityColor = getSeverityColor(w.severity);
 
   // Color the label based on severity: dim when safe, colored when at risk
   const isAtRisk = w.severity !== "none";
-  const labelColor = isAtRisk ? color : "dim";
-  const labelText = theme.fg(labelColor, `${short}:`);
+  const labelText = isAtRisk
+    ? applySeverityColor(theme, color, `${short}:`)
+    : theme.fg("dim", `${short}:`);
 
   // Synthetic windows always use compact "remaining%" format
   // to match the pi-synthetic extension display
@@ -84,22 +90,26 @@ export function formatWindowStatus(theme: ThemeLike, w: WindowStatus): string {
   if (isSynthetic) {
     // Compact format matching pi-synthetic: just remaining%
     const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
-    valueText = theme.fg(color, `${remaining}%`);
+    valueText = applySeverityColor(theme, color, `${remaining}%`);
   } else if (w.label === "Spend cap") {
-    valueText = theme.fg(color, w.limited ? "REACHED" : "OK");
+    valueText = applySeverityColor(theme, color, w.limited ? "REACHED" : "OK");
   } else if (w.isCurrency && w.usedValue != null && w.limitValue != null) {
     // Tracking-only windows have limitValue=0, show just usage
     if (w.limitValue === 0) {
-      valueText = theme.fg(color, `$${w.usedValue.toFixed(2)} used`);
+      valueText = applySeverityColor(theme, color, `$${w.usedValue.toFixed(2)} used`);
     } else {
-      valueText = theme.fg(color, `$${w.usedValue.toFixed(2)}/$${w.limitValue.toFixed(2)}`);
+      valueText = applySeverityColor(
+        theme,
+        color,
+        `$${w.usedValue.toFixed(2)}/$${w.limitValue.toFixed(2)}`,
+      );
     }
   } else if (hasRealCounts(w)) {
     const remaining = Math.max(0, Math.round(w.limitValue! - w.usedValue!));
-    valueText = theme.fg(color, `${remaining}/${w.limitValue}`);
+    valueText = applySeverityColor(theme, color, `${remaining}/${w.limitValue}`);
   } else {
     const remaining = Math.max(0, Math.min(100, Math.round(100 - w.usedPercent)));
-    valueText = theme.fg(color, `${remaining}% left`);
+    valueText = applySeverityColor(theme, color, `${remaining}% left`);
   }
 
   const limitTag = w.limited ? theme.fg("error", " !") : "";
